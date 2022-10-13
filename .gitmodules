@@ -1,0 +1,6 @@
+[submodule "ProcessDumper/lib/argparse"]
+	path = ProcessDumper/lib/argparse
+	url = https://github.com/p-ranav/argparse
+[submodule "DumpAnalyzer/lib/argparse"]
+	path = DumpAnalyzer/lib/argparse
+	url = https://github.com/p-ranav/argparse
