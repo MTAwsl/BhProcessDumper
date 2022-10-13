@@ -26,6 +26,7 @@ protected:
 class bhWinException : public bhException {
 public:
 	bhWinException(const char* file, unsigned int line, std::string msg) noexcept;
+	DWORD GetCode() const noexcept;
 	virtual const char* what() const noexcept override;
 private:
 	DWORD errorCode;

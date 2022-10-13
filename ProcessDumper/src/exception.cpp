@@ -1,4 +1,5 @@
 #include "bhexception.h"
+#include <iostream>
 
 bhException::bhException(const char* file, unsigned int line, std::string msg) noexcept
 {
@@ -30,7 +31,8 @@ const char* bhException::what() const noexcept
 
 void bhException::Alert() const noexcept
 {
-    MessageBoxA(NULL, this->what(), "Error", MB_OK | MB_ICONERROR);
+    // MessageBoxA(NULL, this->what(), "Error", MB_OK | MB_ICONERROR);
+	std::cerr << this->what() << std::endl;
 }
 
 bhWinException::bhWinException(const char* file, unsigned int line, std::string msg) noexcept : bhException(file, line, msg)
@@ -57,6 +59,11 @@ bhWinException::bhWinException(const char* file, unsigned int line, std::string 
 	}
 }
 
+DWORD bhWinException::GetCode() const noexcept
+{
+	return this->errorCode;
+}
+
 const char* bhWinException::what() const noexcept
 {
 	if (whatMsg.empty()) {
@@ -64,7 +71,7 @@ const char* bhWinException::what() const noexcept
 		ostr << "[File] " << this->GetFile() << std::endl
 			<< "[Line] " << this->GetLine() << std::endl
 			<< "[Description] " << this->GetMsg() << std::endl
-			<< "[Error Code]" << this->errorCode << std::endl
+			<< "[Error Code] " << this->errorCode << std::endl
 			<< "[Windows Error Description]" << std::endl
 			<< this->winErrMsg << std::endl;
 		whatMsg = ostr.str();

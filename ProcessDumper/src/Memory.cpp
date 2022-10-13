@@ -1,6 +1,54 @@
 #include "MemoryClass.h"
+#include <Psapi.h>
 
-MemoryPage::MemRegionType MemoryPage::GetType() const noexcept
+const char* MemRegionTypeStringify[] = {
+   "Private", "Mapped", "Image", "Others", "Invalid"
+};
+
+std::string MemProtectionToString(DWORD Protect) {
+    std::string result;
+    if (!Protect)        //reserved pages don't have a protection (https://goo.gl/Izkk0c)
+    {
+        return "";
+    }
+    switch (Protect & 0xFF)
+    {
+    case PAGE_NOACCESS:
+        result = "----";
+        break;
+    case PAGE_READONLY:
+        result = "-R--";
+        break;
+    case PAGE_READWRITE:
+        result = "-RW-";
+        break;
+    case PAGE_WRITECOPY:
+        result = "-RWC";
+        break;
+    case PAGE_EXECUTE:
+        result = "E---";
+        break;
+    case PAGE_EXECUTE_READ:
+        result = "ER--";
+        break;
+    case PAGE_EXECUTE_READWRITE:
+        result = "ERW-";
+        break;
+    case PAGE_EXECUTE_WRITECOPY:
+        result = "ERWC";
+        break;
+    default:
+        break;
+    }
+
+    result.push_back(((Protect & PAGE_GUARD) == PAGE_GUARD) ? 'G' : '-');
+    //  Rights[5] = ((Protect & PAGE_NOCACHE) == PAGE_NOCACHE) ? '' : '-';
+    //  Rights[6] = ((Protect & PAGE_WRITECOMBINE) == PAGE_GUARD) ? '' : '-';
+
+    return result;
+}
+
+MemRegionType MemoryPage::GetType() const noexcept
 {
 	return this->type;
 }
@@ -53,7 +101,7 @@ std::string MemoryPage::GetProcName() const noexcept
 template<typename T>
 inline const T& MemoryPage::operator[](unsigned int index) const
 {
-    if (!this->state & MEM_COMMIT) throw BHNORMEXCEPTION((std::stringstream("Tried to Read address ") << std::hex << "0x" << this->addr+index << " which is not commited.").str().c_str());
+    if (!this->state & MEM_COMMIT) throw BHNORMEXCEPTION((std::stringstream() << ("Tried to Read address ") << std::hex << "0x" << this->addr+index << " which is not commited.").str().c_str());
     if (index >= size / sizeof(T)) throw BHNORMEXCEPTION("Index out of bound.");
     if (this->mode == Disk) this->UnSwap();
     return ((const T*)(buffer.get()))[index];
@@ -148,12 +196,25 @@ void MemoryPage::Dump() const
 {
     using enum MemoryPage::DumpException::Type;
     if (this->mode == None) throw DumpException(NonCommit, __FILE__, __LINE__, this->addr);
-    if (this->mode != Initial) throw DumpException(Unexpected, __FILE__, __LINE__, reinterpret_cast<uintptr_t>((std::stringstream("Tried to dump the address 0x") << std::hex << this->addr << " twice.").str().c_str()));
+    if (this->mode != Initial) throw DumpException(Unexpected, __FILE__, __LINE__, reinterpret_cast<uintptr_t>((std::stringstream() << ("Tried to dump the address 0x") << std::hex << this->addr << " twice.").str().c_str()));
     this->buffer = std::make_unique<byte[]>(this->size);
     if (!this->buffer) throw BHNORMEXCEPTION("Not enough RAM.");
-    this->mode = Memory;
-    if (!this->proc) throw BHNORMEXCEPTION("Process in this memory page is invalid.");
-    this->proc->ReadProcessMemory(this->addr, this->size, this->buffer.get());
+    MemoryPage::DumpStorageMode originalMode = this->mode;
+    std::string protect = MemProtectionToString(this->perm);
+    bool bReadAble = protect.find('R') != std::string::npos && protect.find('G') == std::string::npos;
+    DWORD originalProtect;
+    if (!bReadAble) originalProtect = this->proc->VirtualProtect(this->addr, this->size, PAGE_EXECUTE_READWRITE);
+    try {
+        this->mode = Memory;
+        if (!this->proc) throw BHNORMEXCEPTION("Process Object is invalid.");
+        this->proc->ReadProcessMemory(this->addr, this->size, this->buffer.get());
+        if (!bReadAble) this->proc->VirtualProtect(this->addr, this->size, originalProtect);
+    }
+    catch (bhException& e) {
+        this->mode = originalMode;
+        if (!bReadAble) this->proc->VirtualProtect(this->addr, this->size, originalProtect);
+        throw e;
+    }
 }
 
 void MemoryPage::Pull(OUT byte* out, IN size_t size) const
@@ -168,17 +229,34 @@ void MemoryPage::Pull(OUT byte* out, IN size_t size) const
         return;
     case Initial:
         this->Dump();
-        break;
-    case Disk:
-        this->UnSwap();
         // DO NOT ADD BREAK AT THIS LINE.
         // LET IT OVERFLOW.
     case Memory:
-        memcpy_s(out, size, reinterpret_cast<const void* const>(this->addr), this->size);
+        memcpy_s(out, size, this->buffer.get(), this->size);
+        return;
+    case Disk:
         break;
     default:
         throw DumpException(InvalidMode, __FILE__, __LINE__, this->mode);
         return;
+    }
+
+    // Disk mode
+    using enum MemoryPage::DumpException::Type;
+
+    try {
+        if (this->buffer) throw BHNORMEXCEPTION("Potential Memory leak detected.");
+        dumpfile.open(this->dumppath, std::ios::in | std::ios::binary);
+        dumpfile.read(reinterpret_cast<char*>(out), this->size);
+        dumpfile.close();
+    }
+    catch (std::ios::failure& e) {
+        SetLastError(e.code().value());
+        throw BHWINEXCEPTION((std::string("Failed to dump memory to file at ") + this->dumppath.string()).c_str());
+    }
+    catch (fs::filesystem_error& e) {
+        SetLastError(e.code().value());
+        throw BHWINEXCEPTION((std::string("Failed to delete dump file ") + this->dumppath.string()).c_str());
     }
     
 }
@@ -186,7 +264,7 @@ void MemoryPage::Pull(OUT byte* out, IN size_t size) const
 MemoryPage::MemoryPage(std::shared_ptr<Process> proc, uintptr_t address) : proc(proc)
 {
     using enum MemRegionType;
-
+    
     MEMORY_BASIC_INFORMATION mbi = proc->VirtualQuery(address);
     this->procName = proc->GetProcName();
 	this->addr = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
@@ -213,6 +291,30 @@ MemoryPage::MemoryPage(std::shared_ptr<Process> proc, uintptr_t address) : proc(
     }
     this->perm = mbi.Protect;
     
+    // Setting Info
+    if (this->state == MEM_RESERVE) {
+        if (this->addr != this->allocBaseAddr)
+            this->info = (std::stringstream() << "Reserved (" << std::hex << this->allocBaseAddr << ')').str();
+        else
+            this->info = "Reserved";
+    }
+    else  {
+        const std::unordered_map<uintptr_t, std::string>& modMap = proc->GetModNameMap();
+        if (modMap.find(this->addr) != modMap.end()) {
+            this->info = modMap.at(this->addr);
+        }
+        else {
+            char szMappedName[MAX_PATH] = "";
+            if ((mbi.Type == MEM_MAPPED) &&
+                (GetMappedFileNameA(proc->GetHandle(), reinterpret_cast<LPVOID>(this->allocBaseAddr), szMappedName, MAX_PATH) != 0))
+            {
+                this->info = szMappedName;
+            }
+            else if (this->addr == 0x000000007ffe0000) this->info = "KUSER_SHARED_DATA";
+        }
+        
+    }
+
     this->buffer = nullptr;
     if (this->state & MEM_COMMIT) {
         this->mode = Initial;
@@ -262,7 +364,7 @@ MemoryPage::MemoryPage() noexcept
     perm = 0;
     addr = 0;
     allocBaseAddr = 0;
-    size = 0;
+    size = 4096;
     info = "THIS INFORMATION SHOULD NOT BE DISPLAYED.";
     procName = "INVALID PROCESS.";
     mode = None;
@@ -293,27 +395,28 @@ MemoryPage::~MemoryPage()
     }
 }
 
-MemoryPage::DumpException::DumpException(Type type, const char* file, unsigned int line, uintptr_t msg) : bhException(file, line, reinterpret_cast<const char*>(msg))
+MemoryPage::DumpException::DumpException(Type type, const char* file, unsigned int line, uintptr_t msg) : bhException(file, line, "")
 {
     this->err = type;
     switch (type) {
     case NonCommit:
-        this->SetMsg(((std::stringstream)"Trying to dump non-commit memory 0x" << std::hex << msg).str());
+        this->SetMsg((std::stringstream() <<"Trying to dump non-commit memory 0x" << std::hex << msg).str());
         break;
     case AlreadySwapped:
-        this->SetMsg(((std::stringstream)"The memory region 0x" << std::hex << msg << "has already been swapped into disk.").str());
+        this->SetMsg((std::stringstream() << "The memory region 0x" << std::hex << msg << "has already been swapped into disk.").str());
         break;
     case NotSwapped:
-        this->SetMsg(((std::stringstream)"The memory region 0x" << std::hex << msg << "has not swapped into disk.").str());
+        this->SetMsg((std::stringstream() << "The memory region 0x" << std::hex << msg << "has not swapped into disk.").str());
         break;
     case NotDumped:
-        this->SetMsg(((std::stringstream)"The memory region 0x" << std::hex << msg << "has not been dumped.").str());
+        this->SetMsg((std::stringstream() << "The memory region 0x" << std::hex << msg << "has not been dumped.").str());
         break;
     case InvalidMode:
-        this->SetMsg(((std::stringstream)"The dump mode " << msg << " is invalid.").str());
+        this->SetMsg((std::stringstream() << "The dump mode " << msg << " is invalid.").str());
         break;
     case Unexpected:
     default:
+        this->SetMsg(reinterpret_cast<const char*>(msg));
         break;
     }
 }

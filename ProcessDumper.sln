@@ -5,6 +5,8 @@ VisualStudioVersion = 17.3.32825.248
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ProcessDumper", "ProcessDumper\ProcessDumper.vcxproj", "{35E0BB49-B785-4696-BE10-2B14178490B1}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DumpAnalyzer", "DumpAnalyzer\DumpAnalyzer.vcxproj", "{E2E027D9-99C9-4D79-87E9-5C41EB979A31}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{35E0BB49-B785-4696-BE10-2B14178490B1}.Release|x64.Build.0 = Release|x64
 		{35E0BB49-B785-4696-BE10-2B14178490B1}.Release|x86.ActiveCfg = Release|Win32
 		{35E0BB49-B785-4696-BE10-2B14178490B1}.Release|x86.Build.0 = Release|Win32
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Debug|x64.ActiveCfg = Debug|x64
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Debug|x64.Build.0 = Debug|x64
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Debug|x86.ActiveCfg = Debug|Win32
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Debug|x86.Build.0 = Debug|Win32
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Release|x64.ActiveCfg = Release|x64
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Release|x64.Build.0 = Release|x64
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Release|x86.ActiveCfg = Release|Win32
+		{E2E027D9-99C9-4D79-87E9-5C41EB979A31}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

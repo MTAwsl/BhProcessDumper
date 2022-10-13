@@ -6,9 +6,13 @@ namespace fs = std::filesystem;
 
 class Process;
 
+enum MemRegionType { Private=0, Mapped, Image, Others, Invalid };
+extern const char* MemRegionTypeStringify[];
+
+std::string MemProtectionToString(DWORD);
+
 class MemoryPage {
 public:
-	enum MemRegionType { Private, Mapped, Image, Others, Invalid};
 	enum DumpStorageMode { Memory, Disk, Initial, None };
 
 	class DumpException : public bhException {
@@ -54,5 +58,4 @@ protected:
 	mutable std::unique_ptr<byte[]> buffer;
 	mutable std::fstream dumpfile;
 };
-
 
